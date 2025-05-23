@@ -1,0 +1,425 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Slot Machine Game with Login</title>
+  <style>
+    body {
+      background: linear-gradient(120deg, #0f2027, #203a43, #2c5364);
+      color: white;
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      text-align: center;
+      padding: 1rem;
+      margin: 0;
+      min-height: 100vh;
+      display: flex;
+      justify-content: center;
+      align-items: flex-start;
+    }
+    .container {
+      background: #1c1c1c;
+      padding: 2rem;
+      border-radius: 20px;
+      box-shadow: 0 0 20px rgba(255,255,255,0.1);
+      max-width: 600px;
+      width: 100%;
+    }
+    h1 {
+      color: #00ffae;
+      margin-bottom: 1rem;
+      animation: pulse 2s infinite;
+    }
+    input, select, button {
+      padding: 0.75rem;
+      margin: 0.3rem;
+      font-size: 1rem;
+      border-radius: 8px;
+      border: none;
+    }
+    button {
+      background-color: #00ffae;
+      color: #000;
+      font-weight: bold;
+      cursor: pointer;
+      transition: background 0.3s, transform 0.2s;
+    }
+    button:hover {
+      background-color: #00cc8f;
+      transform: scale(1.05);
+    }
+    .slot-display {
+      margin: 1.5rem auto;
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 1rem;
+      font-size: 2rem;
+      perspective: 1000px;
+    }
+    .slot-cell {
+      background: #444;
+      padding: 1rem;
+      border-radius: 10px;
+      animation: spinIn 0.5s ease-in-out;
+      user-select: none;
+    }
+    .slot-cell.spin {
+      animation: spin 0.6s ease-in-out;
+    }
+    .balance-display, .result-display {
+      margin-top: 1rem;
+      font-weight: bold;
+    }
+    #historyList {
+      max-height: 150px;
+      overflow-y: auto;
+      text-align: left;
+      margin-top: 1rem;
+      background: #222;
+      border-radius: 10px;
+      padding: 1rem;
+      font-size: 0.9rem;
+    }
+    .auth-container {
+      margin-bottom: 2rem;
+    }
+    .hidden {
+      display: none;
+    }
+    @keyframes spin {
+      0% { transform: rotateX(0); opacity: 1; }
+      50% { transform: rotateX(90deg); opacity: 0.2; }
+      100% { transform: rotateX(0); opacity: 1; }
+    }
+    @keyframes spinIn {
+      0% { transform: scale(0); opacity: 0; }
+      100% { transform: scale(1); opacity: 1; }
+    }
+    @keyframes pulse {
+      0% { text-shadow: 0 0 5px #00ffae; }
+      50% { text-shadow: 0 0 20px #00ffae; }
+      100% { text-shadow: 0 0 5px #00ffae; }
+    }
+    .fade-in {
+      animation: fadeIn 1s ease-in forwards;
+    }
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(20px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    label {
+      display: inline-block;
+      min-width: 90px;
+      text-align: right;
+      margin-right: 0.5rem;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+
+    <h1>Slot Machine Game</h1>
+
+    <!-- AUTH -->
+    <div class="auth-container" id="authContainer">
+      <h3>Login / Register</h3>
+      <input type="text" id="usernameInput" placeholder="Username" autocomplete="username" />
+      <input type="password" id="passwordInput" placeholder="Password" autocomplete="current-password" />
+      <br />
+      <button onclick="login()">Login</button>
+      <button onclick="register()">Register</button>
+    </div>
+
+    <!-- LOGGED IN UI -->
+    <div id="gameContainer" class="hidden">
+      <div>
+        <span class="balance-display" id="balance">Balance: Rs.0</span>
+        <button onclick="logout()" style="float:right; background:#ff4c4c;">Logout</button>
+      </div>
+
+      <div style="margin-top:1rem;">
+        <label for="depositInput">Deposit (Rs):</label>
+        <input type="number" id="depositInput" placeholder="Enter amount" min="1" />
+        <button onclick="deposit()">Deposit</button>
+      </div>
+
+      <div style="margin-top:1rem;">
+        <label for="linesInput">Lines to Bet (1-3):</label>
+        <input type="number" id="linesInput" min="1" max="3" value="1" />
+        <label for="betInput">Bet/Line (Rs):</label>
+        <input type="number" id="betInput" min="1" value="10" />
+      </div>
+
+      <button style="margin-top:1rem;" onclick="playSpin()">Spin</button>
+
+      <div class="slot-display" id="slotDisplay">
+        <div class="slot-cell">?</div><div class="slot-cell">?</div><div class="slot-cell">?</div>
+        <div class="slot-cell">?</div><div class="slot-cell">?</div><div class="slot-cell">?</div>
+        <div class="slot-cell">?</div><div class="slot-cell">?</div><div class="slot-cell">?</div>
+      </div>
+
+      <div class="result-display" id="result"></div>
+
+      <h3>Win History</h3>
+      <div id="historyList">No wins yet.</div>
+    </div>
+
+  </div>
+
+  <audio id="winSound" src="https://www.fesliyanstudios.com/play-mp3/4386" preload="auto"></audio>
+  <audio id="spinSound" src="https://www.fesliyanstudios.com/play-mp3/387" preload="auto"></audio>
+
+  <script>
+    // Backend base URL
+    const API_BASE = 'http://localhost:5000/api/auth';
+
+
+    // Elements
+    const authContainer = document.getElementById('authContainer');
+    const gameContainer = document.getElementById('gameContainer');
+    const balanceEl = document.getElementById('balance');
+    const resultEl = document.getElementById('result');
+    const slotDisplay = document.getElementById('slotDisplay');
+    const historyList = document.getElementById('historyList');
+
+    // Slot symbols
+    const symbolCounts = { A: 2, B: 4, C: 6, D: 8 };
+    const symbolValues = { A: 5, B: 4, C: 3, D: 2 };
+
+    // Auth state
+    let token = localStorage.getItem('token') || null;
+
+    // --- AUTH FUNCTIONS ---
+    async function register() {
+      const username = document.getElementById('usernameInput').value.trim();
+      const password = document.getElementById('passwordInput').value.trim();
+      if (!username || !password) return alert('Enter username and password.');
+
+      try {
+        const res = await fetch(`${API_BASE}/register`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ username, password }),
+        });
+        const data = await res.json();
+        if (res.ok) {
+          alert('Registered successfully! Please login.');
+        } else {
+          alert(data.error || 'Registration failed.');
+        }
+      } catch (e) {
+        alert('Error connecting to server.');
+      }
+    }
+
+    async function login() {
+      const username = document.getElementById('usernameInput').value.trim();
+      const password = document.getElementById('passwordInput').value.trim();
+      if (!username || !password) return alert('Enter username and password.');
+
+      try {
+        const res = await fetch(`${API_BASE}/login`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ username, password }),
+        });
+        const data = await res.json();
+        if (res.ok && data.token) {
+          token = data.token;
+          localStorage.setItem('token', token);
+          showGameUI();
+          await fetchBalance();
+          await fetchHistory();
+        } else {
+          alert(data.error || 'Login failed.');
+        }
+      } catch (e) {
+        alert('Error connecting to server.');
+      }
+    }
+
+    function logout() {
+      token = null;
+      localStorage.removeItem('token');
+      authContainer.classList.remove('hidden');
+      gameContainer.classList.add('hidden');
+      resultEl.innerText = '';
+      balanceEl.innerText = 'Balance: Rs.0';
+      historyList.innerText = 'No wins yet.';
+    }
+
+    function showGameUI() {
+      authContainer.classList.add('hidden');
+      gameContainer.classList.remove('hidden');
+    }
+
+    // --- API CALL HELPERS ---
+    async function fetchBalance() {
+      if (!token) return;
+      const res = await fetch(`${API_BASE}/balance`, {
+        headers: { Authorization: token },
+      });
+      if (res.ok) {
+        const data = await res.json();
+        balanceEl.innerText = `Balance: Rs.${data.balance}`;
+      }
+    }
+
+    async function fetchHistory() {
+      if (!token) return;
+      const res = await fetch(`${API_BASE}/history`, {
+        headers: { Authorization: token },
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.length === 0) {
+          historyList.innerText = 'No wins yet.';
+        } else {
+          historyList.innerHTML = data
+            .map(h => {
+              const date = new Date(h.date).toLocaleString();
+              return `<div>Won Rs.${h.winnings} on lines: ${h.lines.join(', ')} <small>(${date})</small></div>`;
+            })
+            .join('');
+        }
+      }
+    }
+
+    // --- DEPOSIT ---
+    async function deposit() {
+      const amount = parseInt(document.getElementById('depositInput').value);
+      if (isNaN(amount) || amount <= 0) return alert('Enter a valid deposit amount.');
+      if (!token) return alert('Please login.');
+
+      const res = await fetch(`${API_BASE}/deposit`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: token },
+        body: JSON.stringify({ amount }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        balanceEl.innerText = `Balance: Rs.${data.balance}`;
+        alert(`Deposited Rs.${amount} successfully!`);
+      } else {
+        alert('Deposit failed.');
+      }
+    }
+
+    // --- SLOT MACHINE LOGIC ---
+    let balance = 0; // local copy for UI animation sync
+
+    async function playSpin() {
+      if (!token) return alert('Please login.');
+
+      const lines = parseInt(document.getElementById('linesInput').value);
+      const bet = parseInt(document.getElementById('betInput').value);
+      if (isNaN(lines) || isNaN(bet) || lines < 1 || lines > 3 || bet <= 0) {
+        return alert('Enter valid line and bet amounts.');
+      }
+
+      // Get current balance from backend before spin
+      const balRes = await fetch(`${API_BASE}/balance`, { headers: { Authorization: token } });
+      if (!balRes.ok) return alert('Error getting balance.');
+      const balData = await balRes.json();
+
+      if (balData.balance < bet * lines) {
+        return alert('Insufficient balance for this bet.');
+      }
+
+      resultEl.innerText = '';
+      spinSound.play();
+
+      // Deduct bet amount immediately on server
+      // But our backend does not have bet deduction, so we handle it by subtracting winnings only,
+      // so we simulate bet deduction by sending spin result with winnings -bet*lines
+
+      // Generate slot symbols
+      const rows = 3;
+      const cols = 3;
+      const symbols = ['A', 'B', 'C', 'D'];
+      const reels = [];
+
+      // Generate grid of random symbols based on symbol counts
+      for (let r = 0; r < rows; r++) {
+        const row = [];
+        for (let c = 0; c < cols; c++) {
+          // Random symbol with weighted probability
+          const allSymbols = [];
+          for (const sym of symbols) {
+            for (let i = 0; i < symbolCounts[sym]; i++) {
+              allSymbols.push(sym);
+            }
+          }
+          const sym = allSymbols[Math.floor(Math.random() * allSymbols.length)];
+          row.push(sym);
+        }
+        reels.push(row);
+      }
+
+      // Display symbols with animation
+      displaySlots(reels);
+
+      // Check winning lines (only horizontal lines 1,2,3)
+      const winningLines = [];
+      let totalWinnings = 0;
+
+      for (let line = 0; line < lines; line++) {
+        const rowSymbols = reels[line];
+        if (rowSymbols.every(s => s === rowSymbols[0])) {
+          winningLines.push(line + 1);
+          totalWinnings += bet * symbolValues[rowSymbols[0]];
+        }
+      }
+
+      totalWinnings -= bet * lines; // Deduct bet amount from winnings for net result
+
+      // Update backend balance with spin result
+      const res = await fetch(`${API_BASE}/spin`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: token },
+        body: JSON.stringify({ winnings: totalWinnings, lines: winningLines }),
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        balanceEl.innerText = `Balance: Rs.${data.balance}`;
+        if (totalWinnings > 0) {
+          resultEl.innerText = `You won Rs.${totalWinnings + bet * lines} on lines: ${winningLines.join(', ')}`;
+          winSound.play();
+        } else {
+          resultEl.innerText = `You lost Rs.${-totalWinnings}`;
+        }
+        await fetchHistory();
+      } else {
+        alert('Error updating spin results.');
+      }
+    }
+
+    // Display slot grid symbols
+    function displaySlots(reels) {
+      const flatSymbols = reels.flat();
+      const cells = slotDisplay.children;
+      for (let i = 0; i < cells.length; i++) {
+        cells[i].classList.remove('spin');
+        setTimeout(() => {
+          cells[i].innerText = flatSymbols[i];
+          cells[i].classList.add('spin');
+        }, i * 100);
+      }
+    }
+
+    // Sounds
+    const winSound = document.getElementById('winSound');
+    const spinSound = document.getElementById('spinSound');
+
+    // On load check token
+    window.onload = async () => {
+      if (token) {
+        showGameUI();
+        await fetchBalance();
+        await fetchHistory();
+      }
+    };
+  </script>
+</body>
+</html>
